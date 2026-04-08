@@ -1,0 +1,15 @@
+{
+  "mcpServers": {
+    "sqlserver": {
+      "command": "node",
+      "args": ["CAMINHO/MCP/mcp-sqlserver/src/index.js"],
+      "env": {
+        "DB_SERVER": "localhost",
+        "DB_PORT": "1433",
+        "DB_DATABASE": "NomeDoBanco",
+        "DB_USER": "sa",
+        "DB_PASSWORD": "SuaSenha"
+      }
+    }
+  }
+}
