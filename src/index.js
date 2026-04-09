@@ -23,6 +23,8 @@ const config = {
   database: process.env.DB_DATABASE || "",
   user: process.env.DB_USER || undefined,
   password: process.env.DB_PASSWORD || undefined,
+  // Port is ignored when using a named instance (SQL Browser handles discovery)
+  port: instanceName ? undefined : parseInt(process.env.DB_PORT || "1433"),
   options: {
     trustServerCertificate: true,
     encrypt: false,
@@ -30,10 +32,6 @@ const config = {
   },
   pool: { max: 5, min: 0, idleTimeoutMillis: 30000 },
 };
-
-if (!instanceName) {
-  config.port = parseInt(process.env.DB_PORT || "1433");
-}
 
 if (!config.user) {
   delete config.user;
