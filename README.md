@@ -1,21 +1,27 @@
 # MCP SQL Server
 
 Servidor MCP (Model Context Protocol) para **Microsoft SQL Server**.
-Permite que ferramentas de IA explorem e consultem bancos SQL Server diretamente durante a conversa, em modo **somente leitura**.
+Permite que ferramentas de IA explorem e consultem bancos SQL Server diretamente durante a conversa.
 
 Compativel com **Claude Code**, **Cursor**, **Windsurf**, **Codex**, **Cline**, **Continue** e qualquer ferramenta que suporte MCP.
 
 ---
 
-## O que ele faz?
+## Ferramentas disponíveis
 
 | Ferramenta | Descricao |
 |------------|-----------|
 | `list_schemas` | Lista todos os schemas do banco |
-| `list_tables` | Lista tabelas e views (filtro por schema opcional) |
-| `describe_table` | Mostra colunas, tipos, PKs e FKs de uma tabela |
+| `list_tables` | Lista tabelas e views, agrupadas por schema |
+| `find_tables` | Busca tabelas e views por nome (parcial) |
+| `describe_table` | Colunas, tipos, PKs, FKs, constraints e flags (IDENTITY, COMPUTED) |
+| `list_indexes` | Indexes de uma tabela com colunas-chave e included columns |
+| `table_stats` | Contagem de linhas, tamanho em disco e datas da tabela |
 | `find_columns` | Busca colunas por nome em todas as tabelas |
-| `query` | Executa queries SELECT (INSERT/UPDATE/DELETE bloqueados) |
+| `relationship_map` | Mapa visual de todas as FKs de um schema |
+| `list_procedures` | Lista stored procedures e functions |
+| `query` | Executa queries SQL (escrita controlada por DB_ALLOW_WRITE) |
+| `permissions` | Mostra o modo atual e todas as permissoes configuradas |
 
 ---
 
@@ -64,6 +70,72 @@ Feche e abra a ferramenta. Ela detecta a configuracao automaticamente e conecta 
 | `DB_USER` | Nao | - | Usuario SQL. Se omitido, usa Windows Auth |
 | `DB_PASSWORD` | Nao | - | Senha SQL. Se omitido, usa Windows Auth |
 | `DB_PORT` | Nao | `1433` | Porta do SQL Server (ignorada se usar instancia nomeada) |
+| `DB_ALLOW_WRITE` | Nao | - | Operacoes de escrita permitidas (ver abaixo) |
+| `DB_ALLOW_TABLES` | Nao | - | Restringe escrita a tabelas especificas (ver abaixo) |
+| `DB_ALLOW_SCHEMAS` | Nao | - | Restringe escrita a schemas especificos (ver abaixo) |
+
+---
+
+## Permissoes de escrita
+
+Por padrao o servidor opera em **modo somente leitura** (apenas SELECT).
+
+### DB_ALLOW_WRITE — habilitar operacoes
+
+Define quais tipos de operacao SQL podem ser executados:
+
+```json
+"DB_ALLOW_WRITE": "INSERT,UPDATE,DELETE"
+```
+
+| Operacao | Risco | Descricao |
+|----------|-------|-----------|
+| `INSERT` | Baixo | Inserir registros |
+| `UPDATE` | Medio | Atualizar registros |
+| `DELETE` | Alto | Remover registros |
+| `MERGE` | Alto | Insert/update/delete combinados |
+| `CREATE` | Alto | Criar tabelas, views, indices |
+| `ALTER` | Alto | Alterar estrutura de tabelas |
+| `DROP` | Critico | Remover tabelas/objetos permanentemente |
+| `TRUNCATE` | Critico | Esvaziar tabela sem rollback |
+
+### DB_ALLOW_SCHEMAS — restringir por schema
+
+Mesmo com escrita habilitada, limita as operacoes a schemas especificos:
+
+```json
+"DB_ALLOW_WRITE": "INSERT,UPDATE,DELETE",
+"DB_ALLOW_SCHEMAS": "staging,temp"
+```
+
+Qualquer tentativa de escrever em outro schema sera bloqueada.
+
+### DB_ALLOW_TABLES — restringir por tabela
+
+Restringe escrita a uma lista explicita de tabelas:
+
+```json
+"DB_ALLOW_WRITE": "INSERT,UPDATE",
+"DB_ALLOW_TABLES": "dbo.Produto,dbo.Pedido"
+```
+
+Pode-se omitir o schema (assume `dbo`): `"DB_ALLOW_TABLES": "Produto,Pedido"`.
+
+### Operacoes permanentemente bloqueadas
+
+Estas operacoes **nunca** podem ser habilitadas, independente da configuracao:
+
+`EXEC`, `EXECUTE`, `GRANT`, `REVOKE`, `DENY`, `BACKUP`, `RESTORE`, `SHUTDOWN`, `DBCC`, `BULK`, `OPENROWSET`, `OPENDATASOURCE`, `xp_*`, `sp_*`
+
+### Comportamento de queries de escrita
+
+- Executadas dentro de uma **transacao automatica** — rollback em caso de erro
+- Registradas no **stderr** com timestamp, operacao e tabela alvo:
+  ```
+  [2024-01-15 10:30:45] WRITE  INSERT → dbo.Produto  (3 row(s) affected)
+  ```
+
+> **Dica:** Use a ferramenta `permissions` para ver em tempo real tudo que esta permitido ou bloqueado.
 
 ---
 
@@ -81,8 +153,6 @@ Feche e abra a ferramenta. Ela detecta a configuracao automaticamente e conecta 
 
 ### Como descobrir a porta do SQL Server
 
-Se nao souber a porta, conecte com localhost primeiro e rode esta query via ferramenta `query`:
-
 ```sql
 SELECT DISTINCT local_tcp_port FROM sys.dm_exec_connections WHERE local_tcp_port IS NOT NULL
 ```
@@ -90,27 +160,6 @@ SELECT DISTINCT local_tcp_port FROM sys.dm_exec_connections WHERE local_tcp_port
 ---
 
 ## Configuracao por ferramenta
-
-O bloco de configuracao base e o mesmo para todas as ferramentas:
-
-```json
-{
-  "sqlserver": {
-    "command": "node",
-    "args": ["C:/MCP/mcp-sqlserver/src/index.js"],
-    "env": {
-      "DB_SERVER": "localhost",
-      "DB_DATABASE": "NomeDoBanco",
-      "DB_USER": "sa",
-      "DB_PASSWORD": "SuaSenha"
-    }
-  }
-}
-```
-
-> **Importante:** Substitua o caminho em `args` pelo caminho real onde voce colocou a pasta.
-
----
 
 ### Claude Code (VSCode ou CLI)
 
@@ -133,91 +182,25 @@ Crie um arquivo `.mcp.json` na **raiz do projeto**:
 }
 ```
 
-Reinicie o Claude Code.
-
----
-
 ### Cursor
 
 1. Abra **Settings** > **MCP**
 2. Clique em **Add new MCP server**
-3. Cole a configuracao:
-
-```json
-{
-  "mcpServers": {
-    "sqlserver": {
-      "command": "node",
-      "args": ["C:/MCP/mcp-sqlserver/src/index.js"],
-      "env": {
-        "DB_SERVER": "localhost",
-        "DB_DATABASE": "NomeDoBanco",
-        "DB_USER": "sa",
-        "DB_PASSWORD": "SuaSenha"
-      }
-    }
-  }
-}
-```
-
----
-
-### Codex
-
-Adicione ao arquivo de configuracao MCP do Codex (mesmo local onde o Playwright esta configurado):
-
-```json
-{
-  "mcpServers": {
-    "sqlserver": {
-      "command": "node",
-      "args": ["C:/MCP/mcp-sqlserver/src/index.js"],
-      "env": {
-        "DB_SERVER": "localhost",
-        "DB_DATABASE": "NomeDoBanco",
-        "DB_USER": "sa",
-        "DB_PASSWORD": "SuaSenha"
-      }
-    }
-  }
-}
-```
-
----
+3. Cole a configuracao acima
 
 ### Windsurf
 
-Adicione ao arquivo `~/.codeium/windsurf/mcp_config.json`:
+Adicione ao arquivo `~/.codeium/windsurf/mcp_config.json` com a configuracao acima.
 
-```json
-{
-  "mcpServers": {
-    "sqlserver": {
-      "command": "node",
-      "args": ["C:/MCP/mcp-sqlserver/src/index.js"],
-      "env": {
-        "DB_SERVER": "localhost",
-        "DB_DATABASE": "NomeDoBanco",
-        "DB_USER": "sa",
-        "DB_PASSWORD": "SuaSenha"
-      }
-    }
-  }
-}
-```
+### Codex / Cline
 
----
-
-### Cline (VSCode)
-
-1. Abra **Settings** > **MCP Servers**
-2. Adicione um novo servidor com a configuracao acima
+Adicione ao arquivo de configuracao MCP da ferramenta com a configuracao acima.
 
 ---
 
 ## Exemplos de configuracao
 
-### SQL Server Auth (usuario e senha)
+### Somente leitura (padrao)
 
 ```json
 "env": {
@@ -228,7 +211,7 @@ Adicione ao arquivo `~/.codeium/windsurf/mcp_config.json`:
 }
 ```
 
-### Windows Auth (sem user/password)
+### Windows Auth
 
 ```json
 "env": {
@@ -237,7 +220,7 @@ Adicione ao arquivo `~/.codeium/windsurf/mcp_config.json`:
 }
 ```
 
-### Instancia nomeada (SQL Express)
+### Instancia nomeada
 
 ```json
 "env": {
@@ -245,6 +228,32 @@ Adicione ao arquivo `~/.codeium/windsurf/mcp_config.json`:
   "DB_DATABASE": "MeuBanco",
   "DB_USER": "sa",
   "DB_PASSWORD": "MinhaS3nha!"
+}
+```
+
+### Escrita apenas em tabelas especificas
+
+```json
+"env": {
+  "DB_SERVER": "localhost",
+  "DB_DATABASE": "MeuBanco",
+  "DB_USER": "sa",
+  "DB_PASSWORD": "MinhaS3nha!",
+  "DB_ALLOW_WRITE": "INSERT,UPDATE",
+  "DB_ALLOW_TABLES": "dbo.Produto,dbo.Pedido"
+}
+```
+
+### Escrita restrita ao schema de staging
+
+```json
+"env": {
+  "DB_SERVER": "localhost",
+  "DB_DATABASE": "MeuBanco",
+  "DB_USER": "sa",
+  "DB_PASSWORD": "MinhaS3nha!",
+  "DB_ALLOW_WRITE": "INSERT,UPDATE,DELETE",
+  "DB_ALLOW_SCHEMAS": "staging"
 }
 ```
 
@@ -264,10 +273,14 @@ Adicione ao arquivo `~/.codeium/windsurf/mcp_config.json`:
 
 ## Seguranca
 
-- Somente **SELECT** e permitido
-- Comandos bloqueados: `INSERT`, `UPDATE`, `DELETE`, `DROP`, `ALTER`, `CREATE`, `TRUNCATE`, `EXEC`, `MERGE`, `GRANT`, `REVOKE`, `DENY`, `BACKUP`, `RESTORE`, `SHUTDOWN`, `DBCC`, `BULK`, `OPENROWSET`, `OPENDATASOURCE`, `xp_`, `sp_`
-- Maximo de **1000 linhas** por query
+- Modo **somente leitura por padrao** — escrita requer configuracao explicita
+- Escrita controlada por 3 camadas: operacao (`DB_ALLOW_WRITE`), schema (`DB_ALLOW_SCHEMAS`), tabela (`DB_ALLOW_TABLES`)
+- Queries de escrita executadas em **transacao automatica** com rollback em erro
+- **Log de auditoria** de todas as operacoes de escrita no stderr
+- Comandos de administracao permanentemente bloqueados: `EXEC`, `GRANT`, `BACKUP`, `SHUTDOWN`, `xp_*`, `sp_*` e outros
+- Maximo de **1000 linhas** por query SELECT
 - Connection pooling com limite de 5 conexoes
+- **Validacao de conexao na inicializacao** — falha rapida com mensagem clara se o banco nao estiver acessivel
 
 ---
 
