@@ -23,8 +23,9 @@ const config = {
   database: process.env.DB_DATABASE || "",
   user: process.env.DB_USER || undefined,
   password: process.env.DB_PASSWORD || undefined,
-  // Port is ignored when using a named instance (SQL Browser handles discovery)
-  port: instanceName ? undefined : parseInt(process.env.DB_PORT || "1433"),
+  // Port: if DB_PORT is set, uses it. Otherwise lets mssql auto-discover.
+  // Named instances always ignore port (SQL Browser handles discovery).
+  port: (!instanceName && process.env.DB_PORT) ? parseInt(process.env.DB_PORT) : undefined,
   options: {
     trustServerCertificate: true,
     encrypt: false,
