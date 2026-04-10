@@ -1,0 +1,15 @@
+export const DEFAULT_ALIASES = {
+  cliente: ["clientes", "cli", "customer", "customers"],
+  produto: ["prod", "produtos", "item", "items", "sku"],
+  pedido: ["pedidos", "order", "orders", "venda", "vendas"],
+  endereco: ["enderecos", "address", "addresses", "logradouro"],
+  usuario: ["usuarios", "user", "users", "login"],
+  empresa: ["filial", "filiais", "company", "companies", "tenant"],
+  pagamento: ["pagamentos", "payment", "payments", "recebimento"],
+  estoque: ["inventory", "inventario", "saldo", "warehouse"],
+  financeiro: ["finance", "faturamento", "billing", "cobranca"],
+  data: ["dt", "date"],
+  valor: ["vlr", "amount", "preco", "price", "total"],
+  codigo: ["cod", "id", "identifier"],
+  observacao: ["obs", "note", "notes", "comentario"],
+};

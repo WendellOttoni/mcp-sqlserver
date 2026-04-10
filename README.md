@@ -21,7 +21,28 @@ Compativel com **Claude Code**, **Cursor**, **Windsurf**, **Codex**, **Cline**, 
 | `relationship_map` | Mapa visual de todas as FKs de um schema |
 | `list_procedures` | Lista stored procedures e functions |
 | `query` | Executa queries SQL (escrita controlada por DB_ALLOW_WRITE) |
+| `sample_values` | Coleta amostras distintas de valores por coluna |
+| `query_with_explanation` | Executa SELECT e devolve um resumo interpretado |
 | `permissions` | Mostra o modo atual e todas as permissoes configuradas |
+| `refresh_metadata` | Recarrega o catalogo em cache |
+| `health` | Mostra estado da conexao e metricas do cache |
+| `find_entities` | Busca tabelas por intencao usando nomes, colunas, descricoes e aliases |
+| `schema_summary` | Resume schemas e destaca tabelas mais centrais |
+| `explain_table` | Explica o papel provavel de uma tabela |
+| `suggest_join_path` | Encontra caminho de joins pelo grafo de FKs |
+| `plan_query` | Gera plano de consulta a partir de objetivo em linguagem natural |
+| `validate_query` | Analisa SQL antes de executar, com risco e avisos |
+
+---
+
+## Novidades da v2
+
+- Catalogo de metadata em memoria com TTL configuravel
+- Busca por intencao com ranking por tabela, coluna, descricao e relacionamentos
+- Grafo de relacionamentos para sugestao de joins
+- Validacao previa de SQL com analise de operacao, tabelas e avisos
+- Paginacao de resultados no render da tool `query`
+- Tools voltadas para agentes: `plan_query`, `explain_table`, `query_with_explanation`
 
 ---
 
