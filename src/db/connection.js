@@ -20,7 +20,7 @@ export async function createDatabaseContext(appConfig) {
 
   async function connect() {
     if (!pool || !pool.connected) {
-      pool = await sql.connect(sqlConfig);
+      pool = await new sql.ConnectionPool(sqlConfig).connect();
     }
     return pool;
   }

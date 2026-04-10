@@ -82,6 +82,99 @@ function summarizeResultRows(rows) {
 }
 
 export function registerCoreTools(server, context) {
+  server.tool(
+    "current_connection",
+    "Show the active SQL Server connection, permissions, and metadata cache status",
+    {},
+    async () => {
+      const cache = context.catalogCache.getStatus();
+      const allowedSwitches = context.appConfig.databaseSwitch?.allowedDatabases || [];
+
+      return textResponse(
+        section("Current Connection", [
+          `Server: ${context.appConfig.db.server}`,
+          `Database: ${context.appConfig.db.database}`,
+          `Connected: ${context.db.connected ? "yes" : "no"}`,
+          `Permission mode: ${context.appConfig.permissions.mode}`,
+          `Cache loaded: ${cache.loaded ? "yes" : "no"}`,
+          `Cache last loaded at: ${cache.lastLoadedAt?.toISOString() || "n/a"}`,
+          `Cache ttl ms: ${cache.ttlMs}`,
+          `Database switch allowlist: ${
+            allowedSwitches.length > 0 ? allowedSwitches.join(", ") : "any accessible database"
+          }`,
+        ])
+      );
+    }
+  );
+
+  server.tool(
+    "list_databases",
+    "List databases accessible on the current SQL Server",
+    {
+      include_system_databases: z
+        .boolean()
+        .optional()
+        .default(false)
+        .describe("Include master, model, msdb, and tempdb"),
+    },
+    async ({ include_system_databases }) => {
+      try {
+        const result = await context.db.query(`
+          SELECT
+            name,
+            state_desc,
+            user_access_desc,
+            compatibility_level
+          FROM sys.databases
+          WHERE HAS_DBACCESS(name) = 1
+          ORDER BY name
+        `);
+
+        const systemDatabases = new Set(["master", "model", "msdb", "tempdb"]);
+        const allowedSwitches = context.appConfig.databaseSwitch?.allowedDatabases || [];
+        const rows = result.recordset
+          .filter(
+            (row) =>
+              include_system_databases ||
+              !systemDatabases.has(String(row.name).toLowerCase())
+          )
+          .map((row) => {
+            const normalized = String(row.name).toLowerCase();
+            const switchAllowed =
+              allowedSwitches.length === 0 || allowedSwitches.includes(normalized);
+            return [
+              row.name,
+              row.state_desc,
+              row.user_access_desc,
+              row.compatibility_level,
+              normalized === context.appConfig.db.database.toLowerCase()
+                ? "current"
+                : switchAllowed ? "yes" : "blocked",
+            ];
+          });
+
+        return textResponse(
+          [
+            section("Databases", [
+              `Server: ${context.appConfig.db.server}`,
+              `Count: ${rows.length}`,
+              `System databases: ${include_system_databases ? "included" : "hidden"}`,
+            ]),
+            "",
+            rows.length === 0
+              ? "No databases found."
+              : markdownTable(
+                  ["Name", "State", "Access", "Compat", "Switch"],
+                  rows
+                ),
+          ].join("\n")
+        );
+      } catch (error) {
+        return textResponse(`SQL Error: ${error.message}`, true);
+      }
+    }
+  );
+
   server.tool("list_schemas", "List all schemas in the database", {}, async () => {
     const catalog = await context.catalogCache.getCatalog();
     return textResponse(
@@ -516,7 +609,7 @@ export function registerCoreTools(server, context) {
         return textResponse("Database switching is not available in this server instance.", true);
       }
 
-      if (database === context.appConfig.db.database) {
+      if (database.toLowerCase() === context.appConfig.db.database.toLowerCase()) {
         return textResponse(
           section("Database Unchanged", [
             `Current database: ${context.appConfig.db.database}`,
@@ -528,6 +621,7 @@ export function registerCoreTools(server, context) {
       try {
         const result = await context.switchDatabase(database);
         const catalog = context.catalogCache.getStatus();
+        const allowedSwitches = context.appConfig.databaseSwitch?.allowedDatabases || [];
         return textResponse(
           [
             section("Database Switched", [
@@ -535,6 +629,7 @@ export function registerCoreTools(server, context) {
               `Current database: ${result.database}`,
               `Server: ${result.server}`,
               `Catalog loaded: ${catalog.loaded ? "yes" : "no"}`,
+              `Allowlist: ${allowedSwitches.length > 0 ? allowedSwitches.join(", ") : "not configured"}`,
             ]),
           ].join("\n")
         );

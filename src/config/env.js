@@ -85,6 +85,11 @@ export function loadAppConfig(env = process.env) {
     metadata: {
       ttlMs: Number.parseInt(env.DB_METADATA_TTL_MS || `${DEFAULT_CACHE_TTL_MS}`, 10),
     },
+    databaseSwitch: {
+      allowedDatabases: splitCsv(env.DB_ALLOW_DATABASE_SWITCH).map((item) =>
+        item.toLowerCase()
+      ),
+    },
     runtime: {
       queryTimeoutMs: Number.parseInt(env.DB_QUERY_TIMEOUT_MS || "30000", 10),
       defaultMaxRows: Number.parseInt(env.DB_DEFAULT_MAX_ROWS || "100", 10),

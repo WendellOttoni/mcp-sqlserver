@@ -13,12 +13,16 @@ Permite que Claude Code, Codex, Cursor, Windsurf, Cline, Continue e outras ferra
 - Executa `SELECT` e, opcionalmente, escrita controlada por permissoes
 - Mantem catalogo em memoria com cache e refresh
 - Permite trocar o banco ativo em runtime com `switch_database`
+- Lista bancos acessiveis no servidor com `list_databases`
+- Mostra a conexao ativa com `current_connection`
 - Retorna respostas em formato visual com box-drawing ASCII/Unicode durante a execucao das tools
 
 ## Ferramentas disponiveis
 
 | Ferramenta | Descricao |
 |------------|-----------|
+| `current_connection` | Mostra servidor, banco ativo, permissao e cache |
+| `list_databases` | Lista bancos acessiveis no SQL Server atual |
 | `list_schemas` | Lista todos os schemas do banco |
 | `list_tables` | Lista tabelas e views agrupadas por schema |
 | `find_tables` | Busca tabelas e views por nome |
@@ -81,7 +85,7 @@ Exemplo de `.mcp.json`:
 }
 ```
 
-Voce tambem pode usar o template em [.mcp.json.example](C:\mcp-sqlserver\.mcp.json.example).
+Voce tambem pode usar o template em `.mcp.json.example`.
 
 ## Variaveis de ambiente
 
@@ -95,6 +99,7 @@ Voce tambem pode usar o template em [.mcp.json.example](C:\mcp-sqlserver\.mcp.js
 | `DB_ALLOW_WRITE` | Nao | - | Operacoes de escrita permitidas |
 | `DB_ALLOW_TABLES` | Nao | - | Restringe escrita a tabelas especificas |
 | `DB_ALLOW_SCHEMAS` | Nao | - | Restringe escrita a schemas especificos |
+| `DB_ALLOW_DATABASE_SWITCH` | Nao | - | Allowlist opcional de bancos permitidos para `switch_database` |
 | `DB_METADATA_TTL_MS` | Nao | `300000` | TTL do cache de metadata em ms |
 | `DB_QUERY_TIMEOUT_MS` | Nao | `30000` | Timeout das queries em ms |
 | `DB_DEFAULT_MAX_ROWS` | Nao | `100` | Limite padrao de linhas para leitura |
@@ -134,6 +139,13 @@ Operacoes permanentemente bloqueadas:
 
 Agora nao e mais necessario reiniciar o processo MCP para apontar para outro banco no mesmo servidor.
 
+Fluxo recomendado:
+
+1. Rode `current_connection` para confirmar onde a sessao esta conectada.
+2. Rode `list_databases` para ver os bancos acessiveis.
+3. Rode `switch_database` para trocar o banco ativo.
+4. Rode `schema_summary` ou `list_schemas` para explorar o novo banco.
+
 Use:
 
 ```text
@@ -151,6 +163,18 @@ Observacao:
 
 - `switch_database` troca apenas o banco ativo
 - `server`, `user`, `password` e outras configuracoes permanecem as mesmas
+- `list_databases` oculta `master`, `model`, `msdb` e `tempdb` por padrao
+- use `include_system_databases: true` para incluir bancos de sistema
+
+Para limitar quais bancos podem ser usados em `switch_database`, configure:
+
+```json
+{
+  "DB_ALLOW_DATABASE_SWITCH": "ReqPlay,Homologacao,Teste"
+}
+```
+
+Se `DB_ALLOW_DATABASE_SWITCH` nao for definida, qualquer banco acessivel pelo login atual pode ser usado.
 
 ## Exemplos de configuracao
 

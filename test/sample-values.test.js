@@ -31,15 +31,21 @@ test("sample_values generates valid DISTINCT TOP syntax and returns grouped valu
 
   const context = {
     appConfig: {
+      db: { database: "ReqPlay", server: "localhost" },
       runtime: { defaultSampleSize: 5, defaultMaxRows: 100 },
-      permissions: { isReadOnly: true, allowedWriteOps: [] },
+      permissions: { isReadOnly: true, allowedWriteOps: [], mode: "READ-ONLY" },
+      databaseSwitch: { allowedDatabases: [] },
     },
     catalogCache: {
       async getCatalog() {
         return createCatalog();
       },
+      getStatus() {
+        return { loaded: true, ttlMs: 300000, metrics: {} };
+      },
     },
     db: {
+      connected: true,
       async query(sql) {
         capturedSql = sql;
         return {
@@ -79,7 +85,8 @@ test("switch_database delegates the change and reports the new active database",
     appConfig: {
       db: { database: "ReqPlay", server: "localhost" },
       runtime: { defaultSampleSize: 5, defaultMaxRows: 100 },
-      permissions: { isReadOnly: true, allowedWriteOps: [] },
+      permissions: { isReadOnly: true, allowedWriteOps: [], mode: "READ-ONLY" },
+      databaseSwitch: { allowedDatabases: [] },
     },
     catalogCache: {
       getStatus() {
@@ -107,4 +114,91 @@ test("switch_database delegates the change and reports the new active database",
   assert.match(result.content[0].text, /Database Switched/);
   assert.match(result.content[0].text, /Previous database: ReqPlay/);
   assert.match(result.content[0].text, /Current database: OutroBanco/);
+});
+
+test("current_connection reports active database and cache state", async () => {
+  const tools = new Map();
+
+  const server = {
+    tool(name, _description, _schema, handler) {
+      tools.set(name, handler);
+    },
+  };
+
+  const context = {
+    appConfig: {
+      db: { database: "ReqPlay", server: "localhost" },
+      runtime: { defaultSampleSize: 5, defaultMaxRows: 100 },
+      permissions: { isReadOnly: true, allowedWriteOps: [], mode: "READ-ONLY" },
+      databaseSwitch: { allowedDatabases: ["reqplay"] },
+    },
+    db: { connected: true },
+    catalogCache: {
+      getStatus() {
+        return {
+          loaded: true,
+          lastLoadedAt: new Date("2026-04-10T12:00:00.000Z"),
+          ttlMs: 300000,
+        };
+      },
+    },
+  };
+
+  registerCoreTools(server, context);
+  const currentConnection = tools.get("current_connection");
+
+  const result = await currentConnection({});
+
+  assert.equal(result.isError, undefined);
+  assert.match(result.content[0].text, /Current Connection/);
+  assert.match(result.content[0].text, /Database: ReqPlay/);
+  assert.match(result.content[0].text, /Database switch allowlist: reqplay/);
+});
+
+test("list_databases hides system databases and marks allowlist blocks", async () => {
+  const tools = new Map();
+
+  const server = {
+    tool(name, _description, _schema, handler) {
+      tools.set(name, handler);
+    },
+  };
+
+  const context = {
+    appConfig: {
+      db: { database: "ReqPlay", server: "localhost" },
+      runtime: { defaultSampleSize: 5, defaultMaxRows: 100 },
+      permissions: { isReadOnly: true, allowedWriteOps: [], mode: "READ-ONLY" },
+      databaseSwitch: { allowedDatabases: ["reqplay"] },
+    },
+    catalogCache: {
+      getStatus() {
+        return { loaded: true, ttlMs: 300000 };
+      },
+    },
+    db: {
+      connected: true,
+      async query() {
+        return {
+          recordset: [
+            { name: "master", state_desc: "ONLINE", user_access_desc: "MULTI_USER", compatibility_level: 160 },
+            { name: "ReqPlay", state_desc: "ONLINE", user_access_desc: "MULTI_USER", compatibility_level: 160 },
+            { name: "OutroBanco", state_desc: "ONLINE", user_access_desc: "MULTI_USER", compatibility_level: 160 },
+          ],
+        };
+      },
+    },
+  };
+
+  registerCoreTools(server, context);
+  const listDatabases = tools.get("list_databases");
+
+  const result = await listDatabases({ include_system_databases: false });
+
+  assert.equal(result.isError, undefined);
+  assert.match(result.content[0].text, /ReqPlay/);
+  assert.match(result.content[0].text, /current/);
+  assert.match(result.content[0].text, /OutroBanco/);
+  assert.match(result.content[0].text, /blocked/);
+  assert.doesNotMatch(result.content[0].text, /master/);
 });

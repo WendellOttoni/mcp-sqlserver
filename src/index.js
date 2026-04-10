@@ -28,6 +28,16 @@ const server = new McpServer({ name: "mcp-sqlserver", version: "2.0.0" });
 const context = { appConfig, db, catalogCache };
 
 context.switchDatabase = async (database) => {
+  const allowedDatabases = context.appConfig.databaseSwitch.allowedDatabases;
+  if (
+    allowedDatabases.length > 0 &&
+    !allowedDatabases.includes(database.toLowerCase())
+  ) {
+    throw new Error(
+      `Database "${database}" is not allowed by DB_ALLOW_DATABASE_SWITCH`
+    );
+  }
+
   const nextAppConfig = {
     ...context.appConfig,
     db: {
