@@ -506,6 +506,45 @@ export function registerCoreTools(server, context) {
   );
 
   server.tool(
+    "switch_database",
+    "Switch the active database for the current MCP session without restarting the server",
+    {
+      database: z.string().min(1).describe("Database name to connect to"),
+    },
+    async ({ database }) => {
+      if (typeof context.switchDatabase !== "function") {
+        return textResponse("Database switching is not available in this server instance.", true);
+      }
+
+      if (database === context.appConfig.db.database) {
+        return textResponse(
+          section("Database Unchanged", [
+            `Current database: ${context.appConfig.db.database}`,
+            `Server: ${context.appConfig.db.server}`,
+          ])
+        );
+      }
+
+      try {
+        const result = await context.switchDatabase(database);
+        const catalog = context.catalogCache.getStatus();
+        return textResponse(
+          [
+            section("Database Switched", [
+              `Previous database: ${result.previousDatabase}`,
+              `Current database: ${result.database}`,
+              `Server: ${result.server}`,
+              `Catalog loaded: ${catalog.loaded ? "yes" : "no"}`,
+            ]),
+          ].join("\n")
+        );
+      } catch (error) {
+        return textResponse(`Connection failed while switching database: ${error.message}`, true);
+      }
+    }
+  );
+
+  server.tool(
     "permissions",
     "Show the current permission mode: allowed/blocked operations, table and schema restrictions",
     {},

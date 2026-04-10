@@ -31,6 +31,14 @@ export async function createDatabaseContext(appConfig) {
     return activePool;
   }
 
+  async function close() {
+    if (pool) {
+      const activePool = pool;
+      pool = null;
+      await activePool.close();
+    }
+  }
+
   async function query(text, bindInputs = []) {
     const activePool = await connect();
     const request = activePool.request();
@@ -49,6 +57,7 @@ export async function createDatabaseContext(appConfig) {
     connect,
     validate,
     query,
+    close,
     getPool: connect,
     get connected() {
       return Boolean(pool?.connected);

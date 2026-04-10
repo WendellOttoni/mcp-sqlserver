@@ -27,6 +27,44 @@ await catalogCache.getCatalog();
 const server = new McpServer({ name: "mcp-sqlserver", version: "2.0.0" });
 const context = { appConfig, db, catalogCache };
 
+context.switchDatabase = async (database) => {
+  const nextAppConfig = {
+    ...context.appConfig,
+    db: {
+      ...context.appConfig.db,
+      database,
+    },
+  };
+
+  const nextDb = await createDatabaseContext(nextAppConfig);
+
+  try {
+    await nextDb.validate();
+    const nextCatalogCache = new CatalogCache(nextDb, nextAppConfig.metadata.ttlMs);
+    await nextCatalogCache.getCatalog();
+
+    const previousDatabase = context.appConfig.db.database;
+    await context.db.close();
+
+    context.appConfig = nextAppConfig;
+    context.db = nextDb;
+    context.catalogCache = nextCatalogCache;
+
+    process.stderr.write(
+      `[mcp-sqlserver] Switched database from "${previousDatabase}" to "${database}" on ${nextAppConfig.db.server}\n`
+    );
+
+    return {
+      previousDatabase,
+      database,
+      server: nextAppConfig.db.server,
+    };
+  } catch (error) {
+    await nextDb.close().catch(() => {});
+    throw error;
+  }
+};
+
 registerCoreTools(server, context);
 registerIntelligenceTools(server, context);
 

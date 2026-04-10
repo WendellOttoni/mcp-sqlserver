@@ -64,3 +64,47 @@ test("sample_values generates valid DISTINCT TOP syntax and returns grouped valu
   assert.match(result.content[0].text, /┌─ Nome /);
   assert.match(result.content[0].text, /- Admin/);
 });
+
+test("switch_database delegates the change and reports the new active database", async () => {
+  const tools = new Map();
+  let switchedTo = "";
+
+  const server = {
+    tool(name, _description, _schema, handler) {
+      tools.set(name, handler);
+    },
+  };
+
+  const context = {
+    appConfig: {
+      db: { database: "ReqPlay", server: "localhost" },
+      runtime: { defaultSampleSize: 5, defaultMaxRows: 100 },
+      permissions: { isReadOnly: true, allowedWriteOps: [] },
+    },
+    catalogCache: {
+      getStatus() {
+        return { loaded: true };
+      },
+    },
+    async switchDatabase(database) {
+      switchedTo = database;
+      this.appConfig.db.database = database;
+      return {
+        previousDatabase: "ReqPlay",
+        database,
+        server: "localhost",
+      };
+    },
+  };
+
+  registerCoreTools(server, context);
+  const switchDatabase = tools.get("switch_database");
+
+  const result = await switchDatabase({ database: "OutroBanco" });
+
+  assert.equal(switchedTo, "OutroBanco");
+  assert.equal(result.isError, undefined);
+  assert.match(result.content[0].text, /Database Switched/);
+  assert.match(result.content[0].text, /Previous database: ReqPlay/);
+  assert.match(result.content[0].text, /Current database: OutroBanco/);
+});
