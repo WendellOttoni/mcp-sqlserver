@@ -73,6 +73,37 @@ export function markdownTable(headers, rows, maxWidth = MAX_COL_WIDTH) {
   return boxTable(headers, rows, maxWidth);
 }
 
+function escapeMarkdownCell(value) {
+  return String(value ?? "")
+    .replace(/\r?\n/g, " ")
+    .replace(/\|/g, "\\|");
+}
+
+export function plainMarkdownTable(headers, rows) {
+  const safeHeaders = headers.map(escapeMarkdownCell);
+  const safeRows = rows.map((row) => row.map(escapeMarkdownCell));
+  return [
+    `| ${safeHeaders.join(" | ")} |`,
+    `| ${safeHeaders.map(() => "---").join(" | ")} |`,
+    ...safeRows.map((row) => `| ${row.join(" | ")} |`),
+  ].join("\n");
+}
+
+export function renderTable(headers, rows, format = "box", maxWidth = MAX_COL_WIDTH) {
+  if (format === "json") {
+    const objects = rows.map((row) =>
+      Object.fromEntries(headers.map((header, index) => [header, row[index] ?? null]))
+    );
+    return JSON.stringify(objects, null, 2);
+  }
+
+  if (format === "markdown") {
+    return plainMarkdownTable(headers, rows);
+  }
+
+  return boxTable(headers, rows, maxWidth);
+}
+
 export function formatList(items, prefix = "-") {
   const values = items.map((item) => String(item));
   if (prefix !== "-") {

@@ -96,6 +96,8 @@ Voce tambem pode usar o template em `.mcp.json.example`.
 | `DB_USER` | Nao | - | Usuario SQL; se omitido usa Windows Auth |
 | `DB_PASSWORD` | Nao | - | Senha SQL |
 | `DB_PORT` | Nao | `1433` | Porta do SQL Server; ignorada em instancia nomeada |
+| `DB_ENCRYPT` | Nao | `false` | Habilita criptografia na conexao com SQL Server |
+| `DB_TRUST_SERVER_CERTIFICATE` | Nao | `true` | Confia no certificado do servidor sem validacao completa |
 | `DB_ALLOW_WRITE` | Nao | - | Operacoes de escrita permitidas |
 | `DB_ALLOW_TABLES` | Nao | - | Restringe escrita a tabelas especificas |
 | `DB_ALLOW_SCHEMAS` | Nao | - | Restringe escrita a schemas especificos |
@@ -238,6 +240,20 @@ Servidor remoto com porta customizada:
   "DB_DATABASE": "Producao",
   "DB_USER": "app_user",
   "DB_PASSWORD": "SenhaSegura"
+}
+```
+
+Servidor remoto com TLS validado:
+
+```json
+{
+  "DB_SERVER": "sql.empresa.local",
+  "DB_PORT": "1433",
+  "DB_DATABASE": "Producao",
+  "DB_USER": "app_user",
+  "DB_PASSWORD": "SenhaSegura",
+  "DB_ENCRYPT": "true",
+  "DB_TRUST_SERVER_CERTIFICATE": "false"
 }
 ```
 

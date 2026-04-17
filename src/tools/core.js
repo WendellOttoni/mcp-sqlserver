@@ -4,11 +4,18 @@ import {
   textResponse,
   section,
   markdownTable,
+  renderTable,
   keyValueTable,
   formatList,
 } from "../utils/formatting.js";
 import { quoteIdentifier } from "../utils/text.js";
-import { validateQueryText } from "../security/sql-validator.js";
+import { applySelectLimit, validateQueryText } from "../security/sql-validator.js";
+
+const outputFormatSchema = z
+  .enum(["box", "markdown", "json"])
+  .optional()
+  .default("box")
+  .describe("Response table format");
 
 function paginateRows(rows, page, pageSize) {
   const safePage = Math.max(1, page || 1);
@@ -26,7 +33,7 @@ function paginateRows(rows, page, pageSize) {
   };
 }
 
-function renderQueryResult(result, page, pageSize) {
+function renderQueryResult(result, page, pageSize, format = "box") {
   if (!result.recordset || result.recordset.length === 0) {
     return textResponse("## Query Result\nNo rows returned.");
   }
@@ -52,7 +59,7 @@ function renderQueryResult(result, page, pageSize) {
   ];
 
   return textResponse(
-    [section("Query Result", summary), "", markdownTable(columns, rows)].join("\n")
+    [section("Query Result", summary), "", renderTable(columns, rows, format)].join("\n")
   );
 }
 
@@ -197,18 +204,55 @@ export function registerCoreTools(server, context) {
         .string()
         .optional()
         .describe("Filter by schema name (e.g. 'dbo'). Leave empty for all."),
+      page: z.number().optional().default(1).describe("Result page number"),
+      page_size: z.number().optional().default(100).describe("Rows per page"),
+      format: outputFormatSchema,
     },
-    async ({ schema }) => {
+    async ({ schema, page, page_size, format }) => {
       const catalog = await context.catalogCache.getCatalog();
       const tables = catalog.tables.filter((table) => !schema || table.schema === schema);
+      const pagination = paginateRows(tables, page, page_size);
+      const rows = pagination.rows.map((item) => [
+        item.schema,
+        item.name,
+        item.type,
+        item.columns?.length ?? 0,
+        item.description || "",
+      ]);
+
+      if (format !== "box") {
+        return textResponse(
+          [
+            section("Tables", [
+              `Database: ${catalog.database}`,
+              `Rows: ${pagination.totalRows}`,
+              `Page: ${pagination.page}/${pagination.totalPages}`,
+              `Page size: ${pagination.pageSize}`,
+            ]),
+            "",
+            renderTable(["Schema", "Name", "Type", "Columns", "Description"], rows, format),
+          ].join("\n")
+        );
+      }
+
       const grouped = new Map();
 
-      for (const table of tables) {
+      for (const table of pagination.rows) {
         if (!grouped.has(table.schema)) grouped.set(table.schema, []);
         grouped.get(table.schema).push(table);
       }
 
-      const blocks = [];
+      const blocks = [
+        section("Tables", [
+          `Database: ${catalog.database}`,
+          `Rows: ${pagination.totalRows}`,
+          `Page: ${pagination.page}/${pagination.totalPages}`,
+          `Page size: ${pagination.pageSize}`,
+          pagination.hasNextPage
+            ? `Next page available: ${pagination.page + 1}`
+            : "Next page available: no",
+        ]),
+      ];
       for (const [schemaName, items] of grouped.entries()) {
         blocks.push(
           section(schemaName, [
@@ -230,25 +274,34 @@ export function registerCoreTools(server, context) {
     {
       name: z.string().describe("Table name or partial name to search for"),
       schema: z.string().optional().describe("Restrict search to a specific schema"),
+      page: z.number().optional().default(1).describe("Result page number"),
+      page_size: z.number().optional().default(100).describe("Rows per page"),
+      format: outputFormatSchema,
     },
-    async ({ name, schema }) => {
+    async ({ name, schema, page, page_size, format }) => {
       const catalog = await context.catalogCache.getCatalog();
       const normalized = name.toLowerCase();
-      const rows = catalog.tables
+      const matches = catalog.tables
         .filter(
           (table) =>
             (!schema || table.schema === schema) &&
             table.name.toLowerCase().includes(normalized)
-        )
+        );
+      const pagination = paginateRows(matches, page, page_size);
+      const rows = pagination.rows
         .map((table) => [table.schema, table.name, table.type, table.description || ""]);
 
       return textResponse(
-        rows.length === 0
+        matches.length === 0
           ? "## Table Search\nNo tables found."
           : [
-              section("Table Search", [`Matches: ${rows.length}`]),
+              section("Table Search", [
+                `Matches: ${matches.length}`,
+                `Page: ${pagination.page}/${pagination.totalPages}`,
+                `Page size: ${pagination.pageSize}`,
+              ]),
               "",
-              markdownTable(["Schema", "Name", "Type", "Description"], rows),
+              renderTable(["Schema", "Name", "Type", "Description"], rows, format),
             ].join("\n")
       );
     }
@@ -420,27 +473,36 @@ export function registerCoreTools(server, context) {
     "Search for columns by name across all tables (useful to find where a field is used)",
     {
       column_name: z.string().describe("Column name or partial name to search for"),
+      page: z.number().optional().default(1).describe("Result page number"),
+      page_size: z.number().optional().default(100).describe("Rows per page"),
+      format: outputFormatSchema,
     },
-    async ({ column_name }) => {
+    async ({ column_name, page, page_size, format }) => {
       const catalog = await context.catalogCache.getCatalog();
       const normalized = column_name.toLowerCase();
-      const rows = [];
+      const matches = [];
 
       for (const table of catalog.tables) {
         for (const column of table.columns) {
           if (column.name.toLowerCase().includes(normalized)) {
-            rows.push([table.fullName, column.name, column.dataType, column.description || ""]);
+            matches.push([table.fullName, column.name, column.dataType, column.description || ""]);
           }
         }
       }
 
+      const pagination = paginateRows(matches, page, page_size);
+
       return textResponse(
-        rows.length === 0
+        matches.length === 0
           ? "## Column Search\nNo columns found."
           : [
-              section("Column Search", [`Matches: ${rows.length}`]),
+              section("Column Search", [
+                `Matches: ${matches.length}`,
+                `Page: ${pagination.page}/${pagination.totalPages}`,
+                `Page size: ${pagination.pageSize}`,
+              ]),
               "",
-              markdownTable(["Table", "Column", "Type", "Description"], rows),
+              renderTable(["Table", "Column", "Type", "Description"], pagination.rows, format),
             ].join("\n")
       );
     }
@@ -451,10 +513,13 @@ export function registerCoreTools(server, context) {
     "Show all foreign key relationships in a schema - useful to understand the full data model",
     {
       schema: z.string().optional().default("dbo").describe("Schema to map (default: dbo)"),
+      page: z.number().optional().default(1).describe("Result page number"),
+      page_size: z.number().optional().default(100).describe("Rows per page"),
+      format: outputFormatSchema,
     },
-    async ({ schema }) => {
+    async ({ schema, page, page_size, format }) => {
       const catalog = await context.catalogCache.getCatalog();
-      const rows = catalog.tables
+      const allRows = catalog.tables
         .filter(
           (table) =>
             table.schema === schema ||
@@ -467,14 +532,19 @@ export function registerCoreTools(server, context) {
             fk.constraintName,
           ])
         );
+      const pagination = paginateRows(allRows, page, page_size);
 
       return textResponse(
-        rows.length === 0
+        allRows.length === 0
           ? `## Relationship Map\nNo foreign keys found for schema "${schema}".`
           : [
-              section(`Relationship Map: ${schema}`, [`Relationships: ${rows.length}`]),
+              section(`Relationship Map: ${schema}`, [
+                `Relationships: ${allRows.length}`,
+                `Page: ${pagination.page}/${pagination.totalPages}`,
+                `Page size: ${pagination.pageSize}`,
+              ]),
               "",
-              markdownTable(["From", "To", "Constraint"], rows),
+              renderTable(["From", "To", "Constraint"], pagination.rows, format),
             ].join("\n")
       );
     }
@@ -487,13 +557,18 @@ export function registerCoreTools(server, context) {
       schema: z.string().optional().describe("Filter by schema (default: all schemas)"),
       type: z.enum(["PROCEDURE", "FUNCTION", "ALL"]).optional().default("ALL").describe("Filter by routine type"),
       name: z.string().optional().describe("Filter by name (partial match)"),
+      page: z.number().optional().default(1).describe("Result page number"),
+      page_size: z.number().optional().default(100).describe("Rows per page"),
+      format: outputFormatSchema,
     },
-    async ({ schema, type, name }) => {
+    async ({ schema, type, name, page, page_size, format }) => {
       const catalog = await context.catalogCache.getCatalog();
-      const rows = catalog.routines
+      const matches = catalog.routines
         .filter((routine) => (!schema || routine.schema === schema))
         .filter((routine) => type === "ALL" || routine.type === type)
-        .filter((routine) => !name || routine.name.toLowerCase().includes(name.toLowerCase()))
+        .filter((routine) => !name || routine.name.toLowerCase().includes(name.toLowerCase()));
+      const pagination = paginateRows(matches, page, page_size);
+      const rows = pagination.rows
         .map((routine) => [
           routine.schema,
           routine.name,
@@ -503,12 +578,16 @@ export function registerCoreTools(server, context) {
         ]);
 
       return textResponse(
-        rows.length === 0
+        matches.length === 0
           ? "## Procedures & Functions\nNo routines found."
           : [
-              section("Procedures & Functions", [`Found: ${rows.length}`]),
+              section("Procedures & Functions", [
+                `Found: ${matches.length}`,
+                `Page: ${pagination.page}/${pagination.totalPages}`,
+                `Page size: ${pagination.pageSize}`,
+              ]),
               "",
-              markdownTable(["Schema", "Name", "Type", "Created", "Modified"], rows),
+              renderTable(["Schema", "Name", "Type", "Created", "Modified"], rows, format),
             ].join("\n")
       );
     }
@@ -524,8 +603,9 @@ export function registerCoreTools(server, context) {
       max_rows: z.number().optional().default(context.appConfig.runtime.defaultMaxRows).describe("Maximum rows to consider before pagination (default 100, max 1000)"),
       page: z.number().optional().default(1).describe("Result page number (default 1)"),
       page_size: z.number().optional().default(50).describe("Rows per page in the rendered response (default 50, max 1000)"),
+      format: outputFormatSchema,
     },
-    async ({ sql, max_rows, page, page_size }) => {
+    async ({ sql, max_rows, page, page_size, format }) => {
       const validation = validateQueryText(sql, context.appConfig.permissions);
       if (!validation.ok) {
         return textResponse(
@@ -581,16 +661,39 @@ export function registerCoreTools(server, context) {
           }
         }
 
-        const result = await context.db.query(sql);
+        const limited = applySelectLimit(sql, limit);
+        if (!limited.ok) {
+          return textResponse(
+            [
+              section("Query Blocked", [
+                `Reason: ${limited.reason}`,
+                `Operation: ${validation.operation}`,
+                `Risk: medium`,
+              ]),
+              "",
+              section("How to fix", [
+                `Add TOP ${limit} to the SELECT or use OFFSET/FETCH.`,
+              ]),
+            ].join("\n"),
+            true
+          );
+        }
+
+        const result = await context.db.query(limited.sql);
         if (result.recordset.length > limit) {
           result.recordset = result.recordset.slice(0, limit);
         }
 
-        const rendered = renderQueryResult(result, page, page_size);
-        if (!validation.warnings.length) return rendered;
+        const rendered = renderQueryResult(result, page, page_size, format);
+        const warnings = [...validation.warnings];
+        if (limited.changed) {
+          warnings.push(`Applied TOP ${limit} to limit rows at the SQL Server level.`);
+        }
+
+        if (!warnings.length) return rendered;
 
         return textResponse(
-          [rendered.content[0].text, "", section("Warnings", validation.warnings)].join("\n")
+          [rendered.content[0].text, "", section("Warnings", warnings)].join("\n")
         );
       } catch (error) {
         return textResponse(`SQL Error: ${error.message}`, true);
@@ -739,8 +842,14 @@ export function registerCoreTools(server, context) {
       if (validation.isWrite) return textResponse("query_with_explanation only supports read queries.", true);
 
       try {
-        const result = await context.db.query(sql);
-        const rows = result.recordset.slice(0, Math.min(max_rows, 200));
+        const limit = Math.min(max_rows || 50, 200);
+        const limited = applySelectLimit(sql, limit);
+        if (!limited.ok) {
+          return textResponse(`Query blocked: ${limited.reason}`, true);
+        }
+
+        const result = await context.db.query(limited.sql);
+        const rows = result.recordset.slice(0, limit);
         const explanation = summarizeResultRows(rows);
         const rendered = renderQueryResult({ recordset: rows }, 1, Math.min(25, max_rows));
         return textResponse(

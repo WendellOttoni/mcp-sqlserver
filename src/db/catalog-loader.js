@@ -1,4 +1,5 @@
 import { buildRelationshipGraph, computeCentrality } from "../graph/relationship-graph.js";
+import { normalizeText } from "../utils/text.js";
 
 function normalizeName(value) {
   return String(value || "").toLowerCase();
@@ -193,6 +194,14 @@ export async function loadCatalog(dbContext) {
       type: row.TABLE_TYPE,
       fullName: `${row.TABLE_SCHEMA}.${row.TABLE_NAME}`,
       normalizedFullName: key,
+      normalizedName: normalizeText(row.TABLE_NAME),
+      normalizedSearchText: normalizeText([
+        `${row.TABLE_SCHEMA}.${row.TABLE_NAME}`,
+        row.TABLE_DESCRIPTION || "",
+        ...columns.map((column) => column.name),
+        ...columns.map((column) => column.description || ""),
+        ...(fksByTable.get(key) || []).map((fk) => `${fk.TO_SCHEMA}.${fk.TO_TABLE}`),
+      ].join(" ")),
       description: row.TABLE_DESCRIPTION || "",
       columns,
       primaryKey: columns

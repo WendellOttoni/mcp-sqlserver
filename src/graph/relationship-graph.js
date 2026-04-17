@@ -51,10 +51,12 @@ export function shortestJoinPath(graph, from, to) {
   }
 
   const queue = [[from]];
+  let head = 0;
   const visited = new Set([from]);
 
-  while (queue.length > 0) {
-    const path = queue.shift();
+  while (head < queue.length) {
+    const path = queue[head];
+    head += 1;
     const current = path[path.length - 1];
     const currentNode = typeof current === "string" ? current : current.table;
     const edges = graph.adjacency.get(currentNode) || [];

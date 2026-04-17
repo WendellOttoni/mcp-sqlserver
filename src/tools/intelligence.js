@@ -113,6 +113,7 @@ export function registerIntelligenceTools(server, context) {
         `Cache last loaded at: ${status.lastLoadedAt?.toISOString() || "n/a"}`,
         `Cache ttl ms: ${status.ttlMs}`,
         `Cache hits: ${status.metrics.hits}`,
+        `Cache stale hits: ${status.metrics.staleHits || 0}`,
         `Cache misses: ${status.metrics.misses}`,
         `Cache refreshes: ${status.metrics.refreshes}`,
       ])

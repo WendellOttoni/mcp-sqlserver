@@ -8,7 +8,14 @@ import { CatalogCache } from "./db/catalog-cache.js";
 import { registerCoreTools } from "./tools/core.js";
 import { registerIntelligenceTools } from "./tools/intelligence.js";
 
-const appConfig = loadAppConfig();
+let appConfig;
+try {
+  appConfig = loadAppConfig();
+} catch (error) {
+  process.stderr.write(`[mcp-sqlserver] Configuration failed: ${error.message}\n`);
+  process.exit(1);
+}
+
 const db = await createDatabaseContext(appConfig);
 
 try {

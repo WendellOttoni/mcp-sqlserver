@@ -35,7 +35,19 @@ function splitCsv(value) {
     .filter(Boolean);
 }
 
+function parseBoolean(value, defaultValue) {
+  if (value === undefined || value === null || value === "") {
+    return defaultValue;
+  }
+
+  return ["1", "true", "yes", "on"].includes(String(value).trim().toLowerCase());
+}
+
 export function loadAppConfig(env = process.env) {
+  if (!env.DB_DATABASE || !String(env.DB_DATABASE).trim()) {
+    throw new Error("DB_DATABASE is required.");
+  }
+
   const serverRaw = (env.DB_SERVER || "localhost").replace(/\//g, "\\");
   let serverName = serverRaw;
   let instanceName;
@@ -59,8 +71,8 @@ export function loadAppConfig(env = process.env) {
       port:
         !instanceName && env.DB_PORT ? Number.parseInt(env.DB_PORT, 10) : undefined,
       options: {
-        trustServerCertificate: true,
-        encrypt: false,
+        trustServerCertificate: parseBoolean(env.DB_TRUST_SERVER_CERTIFICATE, true),
+        encrypt: parseBoolean(env.DB_ENCRYPT, false),
         instanceName,
       },
       pool: {

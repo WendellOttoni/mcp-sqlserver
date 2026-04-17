@@ -2,6 +2,10 @@ import { DEFAULT_ALIASES } from "./aliases.js";
 import { expandTokens, normalizeText, tokenize } from "../utils/text.js";
 
 function buildSearchBlob(table) {
+  if (table.normalizedSearchText) {
+    return table.normalizedSearchText;
+  }
+
   return normalizeText([
     table.fullName,
     table.description,
@@ -12,8 +16,8 @@ function buildSearchBlob(table) {
 }
 
 function scoreTable(table, tokens) {
-  const tableName = normalizeText(table.name);
-  const fullName = normalizeText(table.fullName);
+  const tableName = table.normalizedName || normalizeText(table.name);
+  const fullName = table.normalizedFullName || normalizeText(table.fullName);
   const description = normalizeText(table.description);
   const columnNames = table.columns.map((column) => normalizeText(column.name));
   const columnDescriptions = table.columns.map((column) =>

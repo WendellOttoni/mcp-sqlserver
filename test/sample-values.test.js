@@ -202,3 +202,92 @@ test("list_databases hides system databases and marks allowlist blocks", async (
   assert.match(result.content[0].text, /blocked/);
   assert.doesNotMatch(result.content[0].text, /master/);
 });
+
+test("query applies TOP at SQL Server level and can render markdown", async () => {
+  const tools = new Map();
+  let capturedSql = "";
+
+  const server = {
+    tool(name, _description, _schema, handler) {
+      tools.set(name, handler);
+    },
+  };
+
+  const context = {
+    appConfig: {
+      db: { database: "ReqPlay", server: "localhost" },
+      runtime: {
+        defaultSampleSize: 5,
+        defaultMaxRows: 100,
+        maxRowsCap: 1000,
+        queryTimeoutMs: 30000,
+      },
+      permissions: {
+        alwaysBlocked: [
+          "EXEC",
+          "EXECUTE",
+          "GRANT",
+          "REVOKE",
+          "DENY",
+          "BACKUP",
+          "RESTORE",
+          "SHUTDOWN",
+          "DBCC",
+          "BULK",
+          "OPENROWSET",
+          "OPENDATASOURCE",
+          "xp_",
+          "sp_",
+        ],
+        writeKeywords: [
+          "INSERT",
+          "UPDATE",
+          "DELETE",
+          "MERGE",
+          "DROP",
+          "ALTER",
+          "CREATE",
+          "TRUNCATE",
+        ],
+        allowedWriteOps: [],
+        allowedTables: [],
+        allowedSchemas: [],
+        isReadOnly: true,
+        mode: "READ-ONLY",
+      },
+      databaseSwitch: { allowedDatabases: [] },
+    },
+    catalogCache: {
+      getStatus() {
+        return { loaded: true, ttlMs: 300000, metrics: {} };
+      },
+    },
+    db: {
+      connected: true,
+      async query(sql) {
+        capturedSql = sql;
+        return {
+          recordset: [
+            { Id: 1, Nome: "Admin" },
+            { Id: 2, Nome: "Operador" },
+          ],
+        };
+      },
+    },
+  };
+
+  registerCoreTools(server, context);
+  const query = tools.get("query");
+
+  const result = await query({
+    sql: "SELECT Id, Nome FROM dbo.Usuario",
+    max_rows: 10,
+    page: 1,
+    page_size: 10,
+    format: "markdown",
+  });
+
+  assert.equal(result.isError, undefined);
+  assert.match(capturedSql, /^SELECT TOP 10 Id, Nome FROM dbo\.Usuario$/i);
+  assert.match(result.content[0].text, /\| Id \| Nome \|/);
+});

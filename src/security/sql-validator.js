@@ -9,6 +9,88 @@ function stripCommentsAndStrings(sqlText) {
     .replace(/N''/g, "''");
 }
 
+function splitStatements(sqlText) {
+  const text = String(sqlText || "");
+  const statements = [];
+  let current = "";
+  let index = 0;
+  let inString = false;
+  let inLineComment = false;
+  let inBlockComment = false;
+
+  while (index < text.length) {
+    const char = text[index];
+    const next = text[index + 1];
+
+    if (inLineComment) {
+      current += char;
+      if (char === "\n") inLineComment = false;
+      index += 1;
+      continue;
+    }
+
+    if (inBlockComment) {
+      current += char;
+      if (char === "*" && next === "/") {
+        current += next;
+        inBlockComment = false;
+        index += 2;
+        continue;
+      }
+      index += 1;
+      continue;
+    }
+
+    if (inString) {
+      current += char;
+      if (char === "'" && next === "'") {
+        current += next;
+        index += 2;
+        continue;
+      }
+      if (char === "'") inString = false;
+      index += 1;
+      continue;
+    }
+
+    if (char === "-" && next === "-") {
+      current += char + next;
+      inLineComment = true;
+      index += 2;
+      continue;
+    }
+
+    if (char === "/" && next === "*") {
+      current += char + next;
+      inBlockComment = true;
+      index += 2;
+      continue;
+    }
+
+    if (char === "'") {
+      current += char;
+      inString = true;
+      index += 1;
+      continue;
+    }
+
+    if (char === ";") {
+      const statement = stripCommentsAndStrings(current).trim();
+      if (statement) statements.push(current.trim());
+      current = "";
+      index += 1;
+      continue;
+    }
+
+    current += char;
+    index += 1;
+  }
+
+  const finalStatement = stripCommentsAndStrings(current).trim();
+  if (finalStatement) statements.push(current.trim());
+  return statements;
+}
+
 function normalizeObjectName(value) {
   return String(value || "")
     .replace(/[\[\]"`]/g, "")
@@ -72,6 +154,32 @@ export function isWriteOperation(operation) {
   ].includes(operation);
 }
 
+export function applySelectLimit(sqlText, limit) {
+  const safeLimit = Math.max(1, Math.min(Number(limit) || 100, 1000));
+  const sanitized = compactWhitespace(stripCommentsAndStrings(sqlText)).toUpperCase();
+
+  if (/\bTOP\s*\(?\s*\d+/i.test(sanitized) || /\bOFFSET\s+\d+\s+ROWS\b/i.test(sanitized)) {
+    return { ok: true, sql: sqlText, changed: false };
+  }
+
+  const match = String(sqlText || "").match(/^(\s*;?\s*SELECT\s+)(DISTINCT\s+)?/i);
+  if (!match) {
+    return {
+      ok: false,
+      reason:
+        "max_rows cannot be safely applied to this SELECT. Add TOP or OFFSET/FETCH explicitly.",
+    };
+  }
+
+  const prefix = match[0];
+  const replacement = `${match[1]}${match[2] || ""}TOP ${safeLimit} `;
+  return {
+    ok: true,
+    sql: `${replacement}${String(sqlText).slice(prefix.length)}`,
+    changed: true,
+  };
+}
+
 export function buildQueryWarnings(sqlText, operation) {
   const sanitized = compactWhitespace(stripCommentsAndStrings(sqlText)).toUpperCase();
   const warnings = [];
@@ -90,6 +198,7 @@ export function buildQueryWarnings(sqlText, operation) {
 }
 
 export function validateQueryText(sqlText, permissions) {
+  const statements = splitStatements(sqlText);
   const operation = detectPrimaryOperation(sqlText);
   const blocked = hasBlockedKeyword(sqlText, permissions);
   const tables = extractObjectCandidates(sqlText);
@@ -99,6 +208,18 @@ export function validateQueryText(sqlText, permissions) {
     ? tables.map((table) => ({ table, ...isTableAllowed(table, permissions) }))
     : [];
   const deniedTable = tableChecks.find((item) => !item.allowed);
+
+  if (statements.length > 1) {
+    return {
+      ok: false,
+      operation,
+      tables,
+      warnings,
+      reason: "Multiple SQL statements in one request are blocked.",
+      risk: "high",
+      statementCount: statements.length,
+    };
+  }
 
   if (blocked.blocked) {
     const permanentlyBlocked = permissions.alwaysBlocked.some(
@@ -138,5 +259,6 @@ export function validateQueryText(sqlText, permissions) {
     warnings,
     risk: isWrite ? "medium" : "low",
     isWrite,
+    statementCount: statements.length,
   };
 }
