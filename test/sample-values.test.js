@@ -116,6 +116,52 @@ test("switch_database delegates the change and reports the new active database",
   assert.match(result.content[0].text, /Current database: OutroBanco/);
 });
 
+test("switch_port delegates the change and reports the new active port", async () => {
+  const tools = new Map();
+  let switchedTo = 0;
+
+  const server = {
+    tool(name, _description, _schema, handler) {
+      tools.set(name, handler);
+    },
+  };
+
+  const context = {
+    appConfig: {
+      db: { database: "ReqPlay", server: "localhost", port: 1433 },
+      runtime: { defaultSampleSize: 5, defaultMaxRows: 100 },
+      permissions: { isReadOnly: true, allowedWriteOps: [], mode: "READ-ONLY" },
+      databaseSwitch: { allowedDatabases: [] },
+    },
+    catalogCache: {
+      getStatus() {
+        return { loaded: true };
+      },
+    },
+    async switchPort(port) {
+      switchedTo = port;
+      this.appConfig.db.port = port;
+      return {
+        previousPort: 1433,
+        port,
+        database: "ReqPlay",
+        server: "localhost",
+      };
+    },
+  };
+
+  registerCoreTools(server, context);
+  const switchPort = tools.get("switch_port");
+
+  const result = await switchPort({ port: 1450 });
+
+  assert.equal(switchedTo, 1450);
+  assert.equal(result.isError, undefined);
+  assert.match(result.content[0].text, /Port Switched/);
+  assert.match(result.content[0].text, /Previous port: 1433/);
+  assert.match(result.content[0].text, /Current port: 1450/);
+});
+
 test("current_connection reports active database and cache state", async () => {
   const tools = new Map();
 
@@ -127,7 +173,7 @@ test("current_connection reports active database and cache state", async () => {
 
   const context = {
     appConfig: {
-      db: { database: "ReqPlay", server: "localhost" },
+      db: { database: "ReqPlay", server: "localhost", port: 1433 },
       runtime: { defaultSampleSize: 5, defaultMaxRows: 100 },
       permissions: { isReadOnly: true, allowedWriteOps: [], mode: "READ-ONLY" },
       databaseSwitch: { allowedDatabases: ["reqplay"] },
@@ -152,6 +198,7 @@ test("current_connection reports active database and cache state", async () => {
   assert.equal(result.isError, undefined);
   assert.match(result.content[0].text, /Current Connection/);
   assert.match(result.content[0].text, /Database: ReqPlay/);
+  assert.match(result.content[0].text, /Port: 1433/);
   assert.match(result.content[0].text, /Database switch allowlist: reqplay/);
 });
 

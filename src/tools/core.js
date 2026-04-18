@@ -88,6 +88,12 @@ function summarizeResultRows(rows) {
   return lines;
 }
 
+function formatPort(appConfig) {
+  const instanceName = appConfig.db.options?.instanceName;
+  if (instanceName) return `instance-managed (${instanceName})`;
+  return String(appConfig.db.port ?? 1433);
+}
+
 export function registerCoreTools(server, context) {
   server.tool(
     "current_connection",
@@ -100,6 +106,7 @@ export function registerCoreTools(server, context) {
       return textResponse(
         section("Current Connection", [
           `Server: ${context.appConfig.db.server}`,
+          `Port: ${formatPort(context.appConfig)}`,
           `Database: ${context.appConfig.db.database}`,
           `Connected: ${context.db.connected ? "yes" : "no"}`,
           `Permission mode: ${context.appConfig.permissions.mode}`,
@@ -738,6 +745,58 @@ export function registerCoreTools(server, context) {
         );
       } catch (error) {
         return textResponse(`Connection failed while switching database: ${error.message}`, true);
+      }
+    }
+  );
+
+  server.tool(
+    "switch_port",
+    "Switch the active SQL Server port for the current MCP session without restarting the server",
+    {
+      port: z
+        .number()
+        .int()
+        .min(1)
+        .max(65535)
+        .describe("SQL Server TCP port to connect to"),
+    },
+    async ({ port }) => {
+      if (typeof context.switchPort !== "function") {
+        return textResponse("Port switching is not available in this server instance.", true);
+      }
+
+      if (context.appConfig.db.options?.instanceName) {
+        return textResponse(
+          "Port switching is not available when DB_SERVER uses a named instance.",
+          true
+        );
+      }
+
+      const currentPort = context.appConfig.db.port ?? 1433;
+      if (port === currentPort) {
+        return textResponse(
+          section("Port Unchanged", [
+            `Current port: ${currentPort}`,
+            `Server: ${context.appConfig.db.server}`,
+            `Database: ${context.appConfig.db.database}`,
+          ])
+        );
+      }
+
+      try {
+        const result = await context.switchPort(port);
+        const catalog = context.catalogCache.getStatus();
+        return textResponse(
+          section("Port Switched", [
+            `Previous port: ${result.previousPort}`,
+            `Current port: ${result.port}`,
+            `Server: ${result.server}`,
+            `Database: ${result.database}`,
+            `Catalog loaded: ${catalog.loaded ? "yes" : "no"}`,
+          ])
+        );
+      } catch (error) {
+        return textResponse(`Connection failed while switching port: ${error.message}`, true);
       }
     }
   );

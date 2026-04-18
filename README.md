@@ -13,6 +13,7 @@ Permite que Claude Code, Codex, Cursor, Windsurf, Cline, Continue e outras ferra
 - Executa `SELECT` e, opcionalmente, escrita controlada por permissoes
 - Mantem catalogo em memoria com cache e refresh
 - Permite trocar o banco ativo em runtime com `switch_database`
+- Permite trocar a porta ativa em runtime com `switch_port`
 - Lista bancos acessiveis no servidor com `list_databases`
 - Mostra a conexao ativa com `current_connection`
 - Retorna respostas em formato visual com box-drawing ASCII/Unicode durante a execucao das tools
@@ -21,7 +22,7 @@ Permite que Claude Code, Codex, Cursor, Windsurf, Cline, Continue e outras ferra
 
 | Ferramenta | Descricao |
 |------------|-----------|
-| `current_connection` | Mostra servidor, banco ativo, permissao e cache |
+| `current_connection` | Mostra servidor, porta, banco ativo, permissao e cache |
 | `list_databases` | Lista bancos acessiveis no SQL Server atual |
 | `list_schemas` | Lista todos os schemas do banco |
 | `list_tables` | Lista tabelas e views agrupadas por schema |
@@ -37,6 +38,7 @@ Permite que Claude Code, Codex, Cursor, Windsurf, Cline, Continue e outras ferra
 | `sample_values` | Retorna amostras distintas de valores por coluna |
 | `query_with_explanation` | Executa query de leitura e adiciona interpretacao curta |
 | `switch_database` | Troca o banco ativo da sessao atual sem reiniciar o MCP |
+| `switch_port` | Troca a porta SQL Server da sessao atual sem reiniciar o MCP |
 | `refresh_metadata` | Recarrega o catalogo em cache |
 | `health` | Mostra estado da conexao e metricas do cache |
 | `find_entities` | Busca entidades por linguagem natural |
@@ -177,6 +179,35 @@ Para limitar quais bancos podem ser usados em `switch_database`, configure:
 ```
 
 Se `DB_ALLOW_DATABASE_SWITCH` nao for definida, qualquer banco acessivel pelo login atual pode ser usado.
+
+## Troca de porta em runtime
+
+Use `switch_port` para apontar a sessao atual para outra porta TCP do mesmo servidor sem reiniciar o chat ou perder o contexto da IA.
+
+Fluxo recomendado:
+
+1. Rode `current_connection` para ver servidor, porta e banco atuais.
+2. Rode `switch_port` com a nova porta.
+3. Rode `current_connection`, `schema_summary` ou `list_schemas` para confirmar a nova conexao.
+
+Use:
+
+```text
+switch_port { "port": 1450 }
+```
+
+Comportamento:
+
+- valida a nova conexao antes de trocar
+- carrega o catalogo usando a nova porta antes de assumir a sessao
+- fecha o pool antigo apenas depois da validacao
+- se a troca falhar, a conexao atual continua ativa
+
+Observacao:
+
+- `switch_port` troca apenas a porta
+- `server`, `database`, `user`, `password` e outras configuracoes permanecem as mesmas
+- em `DB_SERVER` com instancia nomeada, a porta e gerenciada pela instancia e `switch_port` nao e aplicado
 
 ## Exemplos de configuracao
 
