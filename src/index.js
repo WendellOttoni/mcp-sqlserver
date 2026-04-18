@@ -88,6 +88,46 @@ context.switchDatabase = async (database) => {
   }
 };
 
+context.switchCredentials = async (user, password) => {
+  const nextAppConfig = {
+    ...context.appConfig,
+    db: {
+      ...context.appConfig.db,
+      user: user || undefined,
+      password: password || undefined,
+    },
+  };
+
+  const nextDb = await createDatabaseContext(nextAppConfig);
+
+  try {
+    await nextDb.validate();
+    const nextCatalogCache = new CatalogCache(nextDb, nextAppConfig.metadata.ttlMs);
+    await nextCatalogCache.getCatalog();
+
+    const previousUser = context.appConfig.db.user || "(windows auth)";
+    await context.db.close();
+
+    context.appConfig = nextAppConfig;
+    context.db = nextDb;
+    context.catalogCache = nextCatalogCache;
+
+    process.stderr.write(
+      `[mcp-sqlserver] Switched credentials from "${previousUser}" to "${user || "(windows auth)"}" on ${formatDbEndpoint(nextAppConfig)}\n`
+    );
+
+    return {
+      previousUser,
+      user: user || "(windows auth)",
+      database: nextAppConfig.db.database,
+      server: nextAppConfig.db.server,
+    };
+  } catch (error) {
+    await nextDb.close().catch(() => {});
+    throw error;
+  }
+};
+
 context.switchPort = async (port) => {
   if (context.appConfig.db.options?.instanceName) {
     throw new Error("Port switching is not available when DB_SERVER uses a named instance.");
