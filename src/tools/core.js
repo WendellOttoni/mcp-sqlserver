@@ -113,6 +113,7 @@ export function registerCoreTools(server, context) {
           `Cache loaded: ${cache.loaded ? "yes" : "no"}`,
           `Cache last loaded at: ${cache.lastLoadedAt?.toISOString() || "n/a"}`,
           `Cache ttl ms: ${cache.ttlMs}`,
+          `User: ${context.appConfig.db.user || "(windows auth)"}`,
           `Database switch allowlist: ${
             allowedSwitches.length > 0 ? allowedSwitches.join(", ") : "any accessible database"
           }`,
@@ -797,6 +798,49 @@ export function registerCoreTools(server, context) {
         );
       } catch (error) {
         return textResponse(`Connection failed while switching port: ${error.message}`, true);
+      }
+    }
+  );
+
+  server.tool(
+    "switch_credentials",
+    "Switch the SQL Server login credentials for the current MCP session without restarting the server. Leave user empty to use Windows authentication.",
+    {
+      user: z.string().optional().describe("SQL Server login username. Leave empty to use Windows authentication (NTLM)."),
+      password: z.string().optional().describe("SQL Server login password. Leave empty when using Windows authentication."),
+    },
+    async ({ user, password }) => {
+      if (typeof context.switchCredentials !== "function") {
+        return textResponse("Credential switching is not available in this server instance.", true);
+      }
+
+      const currentUser = context.appConfig.db.user || "(windows auth)";
+      const nextUser = user || "(windows auth)";
+
+      if (currentUser === nextUser && !password) {
+        return textResponse(
+          section("Credentials Unchanged", [
+            `User: ${currentUser}`,
+            `Server: ${context.appConfig.db.server}`,
+            `Database: ${context.appConfig.db.database}`,
+          ])
+        );
+      }
+
+      try {
+        const result = await context.switchCredentials(user, password);
+        const catalog = context.catalogCache.getStatus();
+        return textResponse(
+          section("Credentials Switched", [
+            `Previous user: ${result.previousUser}`,
+            `Current user: ${result.user}`,
+            `Server: ${result.server}`,
+            `Database: ${result.database}`,
+            `Catalog loaded: ${catalog.loaded ? "yes" : "no"}`,
+          ])
+        );
+      } catch (error) {
+        return textResponse(`Connection failed while switching credentials: ${error.message}`, true);
       }
     }
   );
