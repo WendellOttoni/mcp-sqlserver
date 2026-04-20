@@ -846,6 +846,87 @@ export function registerCoreTools(server, context) {
   );
 
   server.tool(
+    "switch_connection",
+    "Switch port, user, password, and database together for the current MCP session with a single reconnect at the end.",
+    {
+      port: z
+        .number()
+        .int()
+        .min(1)
+        .max(65535)
+        .optional()
+        .describe("New SQL Server TCP port. Omit to keep the current port."),
+      user: z
+        .string()
+        .optional()
+        .describe("New SQL Server login username. Omit to keep the current user. Use empty string for Windows authentication."),
+      password: z
+        .string()
+        .optional()
+        .describe("New SQL Server login password. Omit to keep the current password."),
+      database: z
+        .string()
+        .min(1)
+        .optional()
+        .describe("New database name. Omit to keep the current database."),
+    },
+    async ({ port, user, password, database }) => {
+      if (typeof context.switchConnection !== "function") {
+        return textResponse("Connection switching is not available in this server instance.", true);
+      }
+
+      const currentPort = context.appConfig.db.port ?? 1433;
+      const currentDatabase = context.appConfig.db.database;
+      const currentUser = context.appConfig.db.user || "(windows auth)";
+      const nextPort = typeof port === "undefined" ? currentPort : port;
+      const nextDatabase = typeof database === "undefined" ? currentDatabase : database;
+      const nextUser =
+        typeof user === "undefined" ? currentUser : user || "(windows auth)";
+
+      if (
+        nextPort === currentPort &&
+        nextDatabase === currentDatabase &&
+        nextUser === currentUser &&
+        typeof password === "undefined"
+      ) {
+        return textResponse(
+          section("Connection Unchanged", [
+            `Server: ${context.appConfig.db.server}`,
+            `Port: ${currentPort}`,
+            `Database: ${currentDatabase}`,
+            `User: ${currentUser}`,
+          ])
+        );
+      }
+
+      try {
+        const updates = {};
+        if (typeof port !== "undefined") updates.port = port;
+        if (typeof user !== "undefined") updates.user = user;
+        if (typeof password !== "undefined") updates.password = password;
+        if (typeof database !== "undefined") updates.database = database;
+
+        const result = await context.switchConnection(updates);
+        const catalog = context.catalogCache.getStatus();
+        return textResponse(
+          section("Connection Switched", [
+            `Server: ${result.connection.server}`,
+            `Previous port: ${result.previousConnection.port}`,
+            `Current port: ${result.connection.port}`,
+            `Previous database: ${result.previousConnection.database}`,
+            `Current database: ${result.connection.database}`,
+            `Previous user: ${result.previousConnection.user}`,
+            `Current user: ${result.connection.user}`,
+            `Catalog loaded: ${catalog.loaded ? "yes" : "no"}`,
+          ])
+        );
+      } catch (error) {
+        return textResponse(`Connection failed while switching connection: ${error.message}`, true);
+      }
+    }
+  );
+
+  server.tool(
     "permissions",
     "Show the current permission mode: allowed/blocked operations, table and schema restrictions",
     {},

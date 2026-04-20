@@ -162,6 +162,132 @@ test("switch_port delegates the change and reports the new active port", async (
   assert.match(result.content[0].text, /Current port: 1450/);
 });
 
+test("switch_connection switches multiple connection fields with a single delegated call", async () => {
+  const tools = new Map();
+  const calls = [];
+
+  const server = {
+    tool(name, _description, _schema, handler) {
+      tools.set(name, handler);
+    },
+  };
+
+  const context = {
+    appConfig: {
+      db: { database: "ReqPlay", server: "localhost", port: 1433, user: "readonly" },
+      runtime: { defaultSampleSize: 5, defaultMaxRows: 100 },
+      permissions: { isReadOnly: true, allowedWriteOps: [], mode: "READ-ONLY" },
+      databaseSwitch: { allowedDatabases: [] },
+    },
+    catalogCache: {
+      getStatus() {
+        return { loaded: true };
+      },
+    },
+    async switchConnection(updates) {
+      calls.push(updates);
+      this.appConfig.db = {
+        ...this.appConfig.db,
+        ...updates,
+      };
+      return {
+        previousConnection: {
+          server: "localhost",
+          port: 1433,
+          database: "ReqPlay",
+          user: "readonly",
+        },
+        connection: {
+          server: "localhost",
+          port: 51218,
+          database: "master",
+          user: "sa",
+        },
+      };
+    },
+  };
+
+  registerCoreTools(server, context);
+  const switchConnection = tools.get("switch_connection");
+
+  const result = await switchConnection({
+    port: 51218,
+    user: "sa",
+    password: "Docker@Test123",
+    database: "master",
+  });
+
+  assert.deepEqual(calls, [
+    {
+      port: 51218,
+      user: "sa",
+      password: "Docker@Test123",
+      database: "master",
+    },
+  ]);
+  assert.equal(result.isError, undefined);
+  assert.match(result.content[0].text, /Connection Switched/);
+  assert.match(result.content[0].text, /Previous port: 1433/);
+  assert.match(result.content[0].text, /Current port: 51218/);
+  assert.match(result.content[0].text, /Previous database: ReqPlay/);
+  assert.match(result.content[0].text, /Current database: master/);
+  assert.match(result.content[0].text, /Previous user: readonly/);
+  assert.match(result.content[0].text, /Current user: sa/);
+});
+
+test("switch_connection keeps omitted fields unchanged", async () => {
+  const tools = new Map();
+  const calls = [];
+
+  const server = {
+    tool(name, _description, _schema, handler) {
+      tools.set(name, handler);
+    },
+  };
+
+  const context = {
+    appConfig: {
+      db: { database: "ReqPlay", server: "localhost", port: 1433, user: "readonly" },
+      runtime: { defaultSampleSize: 5, defaultMaxRows: 100 },
+      permissions: { isReadOnly: true, allowedWriteOps: [], mode: "READ-ONLY" },
+      databaseSwitch: { allowedDatabases: [] },
+    },
+    catalogCache: {
+      getStatus() {
+        return { loaded: true };
+      },
+    },
+    async switchConnection(updates) {
+      calls.push(updates);
+      return {
+        previousConnection: {
+          server: "localhost",
+          port: 1433,
+          database: "ReqPlay",
+          user: "readonly",
+        },
+        connection: {
+          server: "localhost",
+          port: 1433,
+          database: "master",
+          user: "readonly",
+        },
+      };
+    },
+  };
+
+  registerCoreTools(server, context);
+  const switchConnection = tools.get("switch_connection");
+
+  const result = await switchConnection({ database: "master" });
+
+  assert.deepEqual(calls, [{ database: "master" }]);
+  assert.equal(result.isError, undefined);
+  assert.match(result.content[0].text, /Current port: 1433/);
+  assert.match(result.content[0].text, /Current database: master/);
+  assert.match(result.content[0].text, /Current user: readonly/);
+});
+
 test("current_connection reports active database and cache state", async () => {
   const tools = new Map();
 

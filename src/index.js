@@ -40,105 +40,61 @@ await catalogCache.getCatalog();
 const server = new McpServer({ name: "mcp-sqlserver", version: "2.0.0" });
 const context = { appConfig, db, catalogCache };
 
-context.switchDatabase = async (database) => {
-  const allowedDatabases = context.appConfig.databaseSwitch.allowedDatabases;
+function normalizeConnectionDetails(dbConfig) {
+  return {
+    server: dbConfig.server,
+    port: dbConfig.port ?? 1433,
+    database: dbConfig.database,
+    user: dbConfig.user || "(windows auth)",
+  };
+}
+
+context.switchConnection = async (updates = {}) => {
   if (
-    allowedDatabases.length > 0 &&
-    !allowedDatabases.includes(database.toLowerCase())
+    typeof updates.port !== "undefined" &&
+    context.appConfig.db.options?.instanceName
   ) {
-    throw new Error(
-      `Database "${database}" is not allowed by DB_ALLOW_DATABASE_SWITCH`
-    );
-  }
-
-  const nextAppConfig = {
-    ...context.appConfig,
-    db: {
-      ...context.appConfig.db,
-      database,
-    },
-  };
-
-  const nextDb = await createDatabaseContext(nextAppConfig);
-
-  try {
-    await nextDb.validate();
-    const nextCatalogCache = new CatalogCache(nextDb, nextAppConfig.metadata.ttlMs);
-    await nextCatalogCache.getCatalog();
-
-    const previousDatabase = context.appConfig.db.database;
-    await context.db.close();
-
-    context.appConfig = nextAppConfig;
-    context.db = nextDb;
-    context.catalogCache = nextCatalogCache;
-
-    process.stderr.write(
-      `[mcp-sqlserver] Switched database from "${previousDatabase}" to "${database}" on ${formatDbEndpoint(nextAppConfig)}\n`
-    );
-
-    return {
-      previousDatabase,
-      database,
-      server: nextAppConfig.db.server,
-    };
-  } catch (error) {
-    await nextDb.close().catch(() => {});
-    throw error;
-  }
-};
-
-context.switchCredentials = async (user, password) => {
-  const nextAppConfig = {
-    ...context.appConfig,
-    db: {
-      ...context.appConfig.db,
-      user: user || undefined,
-      password: password || undefined,
-    },
-  };
-
-  const nextDb = await createDatabaseContext(nextAppConfig);
-
-  try {
-    await nextDb.validate();
-    const nextCatalogCache = new CatalogCache(nextDb, nextAppConfig.metadata.ttlMs);
-    await nextCatalogCache.getCatalog();
-
-    const previousUser = context.appConfig.db.user || "(windows auth)";
-    await context.db.close();
-
-    context.appConfig = nextAppConfig;
-    context.db = nextDb;
-    context.catalogCache = nextCatalogCache;
-
-    process.stderr.write(
-      `[mcp-sqlserver] Switched credentials from "${previousUser}" to "${user || "(windows auth)"}" on ${formatDbEndpoint(nextAppConfig)}\n`
-    );
-
-    return {
-      previousUser,
-      user: user || "(windows auth)",
-      database: nextAppConfig.db.database,
-      server: nextAppConfig.db.server,
-    };
-  } catch (error) {
-    await nextDb.close().catch(() => {});
-    throw error;
-  }
-};
-
-context.switchPort = async (port) => {
-  if (context.appConfig.db.options?.instanceName) {
     throw new Error("Port switching is not available when DB_SERVER uses a named instance.");
   }
 
+  if (typeof updates.database !== "undefined") {
+    const allowedDatabases = context.appConfig.databaseSwitch.allowedDatabases;
+    if (
+      allowedDatabases.length > 0 &&
+      !allowedDatabases.includes(updates.database.toLowerCase())
+    ) {
+      throw new Error(
+        `Database "${updates.database}" is not allowed by DB_ALLOW_DATABASE_SWITCH`
+      );
+    }
+  }
+
+  const nextDbConfig = {
+    ...context.appConfig.db,
+  };
+
+  if (typeof updates.port !== "undefined") {
+    nextDbConfig.port = updates.port;
+  }
+
+  if (typeof updates.database !== "undefined") {
+    nextDbConfig.database = updates.database;
+  }
+
+  if (typeof updates.user !== "undefined") {
+    nextDbConfig.user = updates.user || undefined;
+    if (!updates.user && typeof updates.password === "undefined") {
+      nextDbConfig.password = undefined;
+    }
+  }
+
+  if (typeof updates.password !== "undefined") {
+    nextDbConfig.password = updates.password || undefined;
+  }
+
   const nextAppConfig = {
     ...context.appConfig,
-    db: {
-      ...context.appConfig.db,
-      port,
-    },
+    db: nextDbConfig,
   };
 
   const nextDb = await createDatabaseContext(nextAppConfig);
@@ -148,27 +104,55 @@ context.switchPort = async (port) => {
     const nextCatalogCache = new CatalogCache(nextDb, nextAppConfig.metadata.ttlMs);
     await nextCatalogCache.getCatalog();
 
-    const previousPort = context.appConfig.db.port ?? 1433;
+    const previousConnection = normalizeConnectionDetails(context.appConfig.db);
     await context.db.close();
 
     context.appConfig = nextAppConfig;
     context.db = nextDb;
     context.catalogCache = nextCatalogCache;
 
+    const currentConnection = normalizeConnectionDetails(nextAppConfig.db);
     process.stderr.write(
-      `[mcp-sqlserver] Switched port from ${previousPort} to ${port} on ${formatDbEndpoint(nextAppConfig)} using database "${nextAppConfig.db.database}"\n`
+      `[mcp-sqlserver] Switched connection from ${previousConnection.server}:${previousConnection.port}/${previousConnection.database} (${previousConnection.user}) to ${currentConnection.server}:${currentConnection.port}/${currentConnection.database} (${currentConnection.user})\n`
     );
 
     return {
-      previousPort,
-      port,
-      database: nextAppConfig.db.database,
-      server: nextAppConfig.db.server,
+      previousConnection,
+      connection: currentConnection,
     };
   } catch (error) {
     await nextDb.close().catch(() => {});
     throw error;
   }
+};
+
+context.switchDatabase = async (database) => {
+  const result = await context.switchConnection({ database });
+  return {
+    previousDatabase: result.previousConnection.database,
+    database: result.connection.database,
+    server: result.connection.server,
+  };
+};
+
+context.switchCredentials = async (user, password) => {
+  const result = await context.switchConnection({ user, password });
+  return {
+    previousUser: result.previousConnection.user,
+    user: result.connection.user,
+    database: result.connection.database,
+    server: result.connection.server,
+  };
+};
+
+context.switchPort = async (port) => {
+  const result = await context.switchConnection({ port });
+  return {
+    previousPort: result.previousConnection.port,
+    port: result.connection.port,
+    database: result.connection.database,
+    server: result.connection.server,
+  };
 };
 
 registerCoreTools(server, context);

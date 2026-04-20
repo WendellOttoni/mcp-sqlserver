@@ -14,6 +14,7 @@ Permite que Claude Code, Codex, Cursor, Windsurf, Cline, Continue e outras ferra
 - Mantem catalogo em memoria com cache e refresh
 - Permite trocar o banco ativo em runtime com `switch_database`
 - Permite trocar a porta ativa em runtime com `switch_port`
+- Permite trocar porta, usuario, senha e banco em uma unica acao com `switch_connection`
 - Lista bancos acessiveis no servidor com `list_databases`
 - Mostra a conexao ativa com `current_connection`
 - Retorna respostas em formato visual com box-drawing ASCII/Unicode durante a execucao das tools
@@ -39,6 +40,7 @@ Permite que Claude Code, Codex, Cursor, Windsurf, Cline, Continue e outras ferra
 | `query_with_explanation` | Executa query de leitura e adiciona interpretacao curta |
 | `switch_database` | Troca o banco ativo da sessao atual sem reiniciar o MCP |
 | `switch_port` | Troca a porta SQL Server da sessao atual sem reiniciar o MCP |
+| `switch_connection` | Troca porta, usuario, senha e banco juntos com uma unica reconexao |
 | `refresh_metadata` | Recarrega o catalogo em cache |
 | `health` | Mostra estado da conexao e metricas do cache |
 | `find_entities` | Busca entidades por linguagem natural |
@@ -208,6 +210,28 @@ Observacao:
 - `switch_port` troca apenas a porta
 - `server`, `database`, `user`, `password` e outras configuracoes permanecem as mesmas
 - em `DB_SERVER` com instancia nomeada, a porta e gerenciada pela instancia e `switch_port` nao e aplicado
+
+## Troca completa de conexao em runtime
+
+Use `switch_connection` quando precisar trocar porta, usuario, senha e banco de uma vez so, com apenas uma validacao e uma reconexao ao final.
+
+Use:
+
+```text
+switch_connection {
+  "port": 51218,
+  "user": "sa",
+  "password": "Docker@Test123",
+  "database": "master"
+}
+```
+
+Comportamento:
+
+- todos os parametros sao opcionais
+- qualquer campo omitido mantem o valor atual
+- a troca so e assumida depois que a nova conexao completa for validada
+- o pool antigo so e fechado no final, apos validar e carregar o catalogo
 
 ## Exemplos de configuracao
 
